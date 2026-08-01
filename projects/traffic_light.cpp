@@ -4,19 +4,19 @@
 
 using namespace std;
 
-void visual();
 void pages();
-void light_post(int x_pos, int y_pos);
+void traffic_light(int x_pos, int y_pos, int state);
 void fill_color(int x_pos, int y_pos, int fill_color, int border_color);
 void road(int x_pos, int y_pos, int len);
-void car(int x, int y);
+void zebra_crossing(int x_pos);
+void car(int x, int y, int dir);
+void bicycle(int x, int y, int dir);
 void human(int x, int y);
 
 int main()
 {
-    initwindow(1200, 700, "Traffic Light");
+    initwindow(1200, 700, "Traffic Simulation");
 
-    // visual();
     pages();
 
     getchar();
@@ -25,67 +25,129 @@ int main()
     return 0;
 }
 
-void visual()
-{
-    for (int i = 0; i < 1000; i++)
-    {
-        cleardevice();
-
-        // light
-        light_post(900, 50);
-
-        // road
-        road(10, 400, 1200);
-
-        // car
-        car(20 + i, 550);
-
-        // human
-        human(600, 550);
-
-        // delay
-        delay(10);
-    }
-}
-
 void pages()
 {
+    const int GREEN_DUR = 350;
+    const int YELLOW_DUR = 150;
+    const int RED_DUR = 320;
+    const int CYCLE = GREEN_DUR + YELLOW_DUR + RED_DUR;
+    const int NUM_CYCLES = 3;
+
+    // vehicle positions (float for smooth motion)
+    float c1 = 80;  // bottom-lane car, right
+    float c2 = 420; // bottom-lane car, right
+    float c3 = 760; // bottom-lane car, right
+    float c4 = 500; // top-lane car, left
+    float b1 = 280; // bottom-lane bicycle, right
+    float b2 = 700; // top-lane bicycle, left
+
+    // pedestrian positions (persistent, so they shuttle across each red)
+    float pBottomY = 620;
+    float pTopY = 340;
+    int tgtB = 620; // destination side for each red light
+    int tgtT = 340;
+    const int CROSS_X = 740;
+
     int page = 0;
 
-    for (int i = 0; i < 1000; i++)
+    for (int i = 0; i < CYCLE * NUM_CYCLES; i++)
     {
         setactivepage(page);
         cleardevice();
 
-        // light signal
-        light_post(900, 50);
+        int t = i % CYCLE;
+        int state;
+        if (t < GREEN_DUR)
+            state = GREEN;
+        else if (t < GREEN_DUR + YELLOW_DUR)
+            state = YELLOW;
+        else
+            state = RED;
 
-        // road
+        // speed factor: green = fast, yellow = gradually slow, red = stop
+        float factor;
+        if (state == GREEN)
+            factor = 1.0f;
+        else if (state == YELLOW)
+            factor = 1.0f - (float)(t - GREEN_DUR) / YELLOW_DUR;
+        else
+            factor = 0.0f;
+
+        // scene
         road(10, 400, 1200);
+        zebra_crossing(720);
+        traffic_light(880, 40, state);
 
-        // car
-        car(20 + i, 550);
+        // vehicles
+        car((int)c1, 550, 1);
+        car((int)c2, 550, 1);
+        car((int)c3, 550, 1);
+        car((int)c4, 430, -1);
+        bicycle((int)b1, 562, 1);
+        bicycle((int)b2, 430, -1);
 
-        // human
-        int y;
-        if (i <= 500)
+        // pedestrians: cross the zebra crossing every time the light is red.
+        // one uses the left side of the crossing, the other the right side,
+        // so they never walk over each other. each red light sends them to
+        // the opposite side of the road.
+        if (state == RED)
         {
-            y = 340 + i / 2;
+            int rt = t - (GREEN_DUR + YELLOW_DUR);
+            if (rt == 16)
+            {
+                // destination is the far side of the road
+                tgtB = (pBottomY > 480) ? 340 : 620;
+                tgtT = (pTopY < 480) ? 620 : 340;
+            }
+            if (rt > 15)
+            {
+                float step = 280.0f / (RED_DUR - 16);
+                if (tgtB < pBottomY)
+                    pBottomY = max(pBottomY - step, (float)tgtB);
+                else
+                    pBottomY = min(pBottomY + step, (float)tgtB);
+
+                if (tgtT > pTopY)
+                    pTopY = min(pTopY + step, (float)tgtT);
+                else
+                    pTopY = max(pTopY - step, (float)tgtT);
+            }
         }
-        human(600, y);
+        human(CROSS_X - 10, (int)pBottomY);
+        human(CROSS_X + 60, (int)pTopY);
 
         setvisualpage(page);
         page = 1 - page; // Switch between page 0 and 1
+
+        // update vehicle positions
+        c1 += 5.0f * factor;
+        c2 += 4.3f * factor;
+        c3 += 4.8f * factor;
+        c4 -= 4.5f * factor;
+        b1 += 2.5f * factor;
+        b2 -= 2.2f * factor;
+
+        if (c1 > 1250)
+            c1 -= 1300;
+        if (c2 > 1250)
+            c2 -= 1300;
+        if (c3 > 1250)
+            c3 -= 1300;
+        if (c4 < -100)
+            c4 += 1300;
+        if (b1 > 1250)
+            b1 -= 1300;
+        if (b2 < -100)
+            b2 += 1300;
 
         delay(10);
     }
 }
 
-void light_post(int x_pos, int y_pos)
+void traffic_light(int x_pos, int y_pos, int state)
 {
-    int ratio = 1;
-    int height = 200;
     int width = 100;
+    int height = 200;
     int gap = 10;
     int lamp_height = 120;
 
@@ -94,20 +156,26 @@ void light_post(int x_pos, int y_pos)
 
     // red light circle
     circle(x_pos + width / 2, (y_pos + height / 4) - gap, 25);
-    fill_color(x_pos + width / 2, (y_pos + height / 4) - gap, RED, WHITE);
+    fill_color(x_pos + width / 2, (y_pos + height / 4) - gap,
+               (state == RED) ? RED : DARKGRAY, WHITE);
 
     // yellow light circle
     circle(x_pos + width / 2, y_pos + 2 * height / 4, 25);
-    fill_color(x_pos + width / 2, y_pos + 2 * height / 4, YELLOW, WHITE);
+    fill_color(x_pos + width / 2, y_pos + 2 * height / 4,
+               (state == YELLOW) ? YELLOW : DARKGRAY, WHITE);
 
     // green light circle
     circle(x_pos + width / 2, (y_pos + 3 * height / 4) + gap, 25);
-    fill_color(x_pos + width / 2, (y_pos + 3 * height / 4) + gap, GREEN, WHITE);
+    fill_color(x_pos + width / 2, (y_pos + 3 * height / 4) + gap,
+               (state == GREEN) ? GREEN : DARKGRAY, WHITE);
 
     // beam
-    rectangle(x_pos + (width / 2) - (gap / 2), y_pos + height, x_pos + (width / 2) + 10, y_pos + height + lamp_height);
-    rectangle(x_pos + (width / 2) - 3 * gap, y_pos + height + lamp_height, x_pos + (width / 2) + 3 * gap, y_pos + height + lamp_height + gap);
-    rectangle(x_pos + (width / 2) - 5 * gap, y_pos + height + lamp_height + gap, x_pos + (width / 2) + 5 * gap, y_pos + height + lamp_height + 2 * gap);
+    rectangle(x_pos + (width / 2) - (gap / 2), y_pos + height,
+              x_pos + (width / 2) + 10, y_pos + height + lamp_height);
+    rectangle(x_pos + (width / 2) - 3 * gap, y_pos + height + lamp_height,
+              x_pos + (width / 2) + 3 * gap, y_pos + height + lamp_height + gap);
+    rectangle(x_pos + (width / 2) - 5 * gap, y_pos + height + lamp_height + gap,
+              x_pos + (width / 2) + 5 * gap, y_pos + height + lamp_height + 2 * gap);
 }
 
 void fill_color(int x_pos, int y_pos, int fill_color, int border_color)
@@ -139,19 +207,52 @@ void road(int x_pos, int y_pos, int len)
     line(x_pos, y_pos + 2 * gap, x_pos + len, y_pos + 2 * gap);
 }
 
-void car(int x, int y)
+void zebra_crossing(int x_pos)
+{
+    int stripe_width = 14;
+    int stripe_gap = 26;
+
+    setcolor(WHITE);
+    for (int i = 0; i < 4; i++)
+    {
+        bar(x_pos + i * stripe_gap,
+            402,
+            x_pos + i * stripe_gap + stripe_width,
+            598);
+    }
+}
+
+void car(int x, int y, int dir)
 {
     // Body
-    rectangle(x, y, x + 80, y + 20);
+    rectangle(x, y, x + 80 * dir, y + 20);
 
     // Roof
-    line(x + 15, y, x + 30, y - 15);
-    line(x + 30, y - 15, x + 50, y - 15);
-    line(x + 50, y - 15, x + 65, y);
+    line(x + 15 * dir, y, x + 30 * dir, y - 15);
+    line(x + 30 * dir, y - 15, x + 50 * dir, y - 15);
+    line(x + 50 * dir, y - 15, x + 65 * dir, y);
 
     // Wheels
-    circle(x + 20, y + 20, 8);
-    circle(x + 60, y + 20, 8);
+    circle(x + 20 * dir, y + 20, 8);
+    circle(x + 60 * dir, y + 20, 8);
+}
+
+void bicycle(int x, int y, int dir)
+{
+    // Wheels
+    circle(x, y, 6);
+    circle(x + 20 * dir, y, 6);
+
+    // Frame
+    line(x, y - 6, x + 20 * dir, y - 18);
+
+    // Seat
+    line(x + 4 * dir, y - 18, x + 20 * dir, y - 18);
+    line(x + 4 * dir, y - 18, x + 4 * dir, y - 26);
+
+    // Handlebar
+    line(x + 20 * dir, y - 18, x + 20 * dir, y - 12);
+    line(x + 16 * dir, y - 12, x + 24 * dir, y - 12);
 }
 
 void human(int x, int y)
@@ -168,8 +269,4 @@ void human(int x, int y)
     // Legs
     line(x, y + 40, x - 10, y + 60);
     line(x, y + 40, x + 10, y + 60);
-}
-
-void movement()
-{
 }
