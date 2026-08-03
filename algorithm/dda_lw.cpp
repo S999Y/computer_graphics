@@ -20,7 +20,13 @@ int main()
     vector<pair<int, int>> rounded_points;
 
     float x1, y1, x2, y2;
-    cin >> x1 >> y1 >> x2 >> y2;
+
+    cout << "===== DDA Line Drawing Algorithm =====\n";
+    cout << "Enter the starting point (x1 y1): ";
+    cin >> x1 >> y1;
+
+    cout << "Enter the ending point (x2 y2): ";
+    cin >> x2 >> y2;
 
     cout << setprecision(3);
     dda_line(x1, y1, x2, y2, points);

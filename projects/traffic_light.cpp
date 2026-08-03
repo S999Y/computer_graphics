@@ -13,6 +13,16 @@ void car(int x, int y, int dir);
 void bicycle(int x, int y, int dir);
 void human(int x, int y);
 
+struct Vehicle
+{
+    float x;
+    float speed;
+    int dir;
+    int span;
+    int y;
+    bool isBike;
+};
+
 int main()
 {
     initwindow(1200, 700, "Traffic Simulation");
@@ -33,13 +43,19 @@ void pages()
     const int CYCLE = GREEN_DUR + YELLOW_DUR + RED_DUR;
     const int NUM_CYCLES = 3;
 
-    // vehicle positions (float for smooth motion)
-    float c1 = 80;  // bottom-lane car, right
-    float c2 = 420; // bottom-lane car, right
-    float c3 = 760; // bottom-lane car, right
-    float c4 = 500; // top-lane car, left
-    float b1 = 280; // bottom-lane bicycle, right
-    float b2 = 700; // top-lane bicycle, left
+    // stop lines just before/after the crossing (crossing spans x 720-860)
+    const int STOP_R = 700; // right-moving traffic halts here
+    const int STOP_L = 880; // left-moving traffic halts here
+
+    // vehicles (x, speed, dir, span, y, isBike)
+    Vehicle vehicles[] = {
+        {80, 5.0f, 1, 80, 550, false},
+        {420, 4.3f, 1, 80, 550, false},
+        {760, 4.8f, 1, 80, 550, false},
+        {500, 4.5f, -1, 80, 430, false},
+        {280, 2.5f, 1, 20, 562, true},
+        {700, 2.2f, -1, 20, 430, true},
+    };
 
     // pedestrian positions (persistent, so they shuttle across each red)
     float pBottomY = 620;
@@ -79,12 +95,13 @@ void pages()
         traffic_light(880, 40, state);
 
         // vehicles
-        car((int)c1, 550, 1);
-        car((int)c2, 550, 1);
-        car((int)c3, 550, 1);
-        car((int)c4, 430, -1);
-        bicycle((int)b1, 562, 1);
-        bicycle((int)b2, 430, -1);
+        for (int v = 0; v < 6; v++)
+        {
+            if (vehicles[v].isBike)
+                bicycle((int)vehicles[v].x, vehicles[v].y, vehicles[v].dir);
+            else
+                car((int)vehicles[v].x, vehicles[v].y, vehicles[v].dir);
+        }
 
         // pedestrians: cross the zebra crossing every time the light is red.
         // one uses the left side of the crossing, the other the right side,
@@ -119,26 +136,28 @@ void pages()
         setvisualpage(page);
         page = 1 - page; // Switch between page 0 and 1
 
-        // update vehicle positions
-        c1 += 5.0f * factor;
-        c2 += 4.3f * factor;
-        c3 += 4.8f * factor;
-        c4 -= 4.5f * factor;
-        b1 += 2.5f * factor;
-        b2 -= 2.2f * factor;
+        // update vehicle positions (halt at the stop line when light is not green)
+        for (int v = 0; v < 6; v++)
+        {
+            float front = vehicles[v].x + vehicles[v].dir * vehicles[v].span;
+            float move = vehicles[v].speed * factor * vehicles[v].dir;
+            float newFront = front + move;
 
-        if (c1 > 1250)
-            c1 -= 1300;
-        if (c2 > 1250)
-            c2 -= 1300;
-        if (c3 > 1250)
-            c3 -= 1300;
-        if (c4 < -100)
-            c4 += 1300;
-        if (b1 > 1250)
-            b1 -= 1300;
-        if (b2 < -100)
-            b2 += 1300;
+            if (state != GREEN)
+            {
+                if (vehicles[v].dir == 1 && front <= STOP_R && newFront > STOP_R)
+                    newFront = STOP_R;
+                else if (vehicles[v].dir == -1 && front >= STOP_L && newFront < STOP_L)
+                    newFront = STOP_L;
+            }
+
+            vehicles[v].x = newFront - vehicles[v].dir * vehicles[v].span;
+
+            if (vehicles[v].x > 1250)
+                vehicles[v].x -= 1300;
+            if (vehicles[v].x < -100)
+                vehicles[v].x += 1300;
+        }
 
         delay(10);
     }
@@ -149,7 +168,7 @@ void traffic_light(int x_pos, int y_pos, int state)
     int width = 100;
     int height = 200;
     int gap = 10;
-    int lamp_height = 120;
+    int lamp_height = 140;
 
     // main light box
     rectangle(x_pos, y_pos, x_pos + width, y_pos + height);
@@ -209,32 +228,44 @@ void road(int x_pos, int y_pos, int len)
 
 void zebra_crossing(int x_pos)
 {
-    int stripe_width = 14;
-    int stripe_gap = 26;
+    int stripe_len = 140;
+    int stripe_thick = 14;
+    int stripe_gap = 44;
 
     setcolor(WHITE);
-    for (int i = 0; i < 4; i++)
+    setfillstyle(SOLID_FILL, WHITE);
+    for (int i = 0; i < 5; i++)
     {
-        bar(x_pos + i * stripe_gap,
-            402,
-            x_pos + i * stripe_gap + stripe_width,
-            598);
+        bar(x_pos,
+            404 + i * stripe_gap,
+            x_pos + stripe_len,
+            404 + i * stripe_gap + stripe_thick);
     }
 }
 
 void car(int x, int y, int dir)
 {
-    // Body
-    rectangle(x, y, x + 80 * dir, y + 20);
+    int body[8] = {x, y, x + 80 * dir, y, x + 80 * dir, y + 20, x, y + 20};
+    int roof[8] = {x + 15 * dir, y, x + 30 * dir, y - 15,
+                   x + 50 * dir, y - 15, x + 65 * dir, y};
 
-    // Roof
+    // Filled body so the zebra stripes don't show through
+    setfillstyle(SOLID_FILL, RED);
+    fillpoly(4, body);
+    fillpoly(4, roof);
+
+    // Outline
+    setcolor(RED);
+    rectangle(x, y, x + 80 * dir, y + 20);
     line(x + 15 * dir, y, x + 30 * dir, y - 15);
     line(x + 30 * dir, y - 15, x + 50 * dir, y - 15);
     line(x + 50 * dir, y - 15, x + 65 * dir, y);
 
-    // Wheels
-    circle(x + 20 * dir, y + 20, 8);
-    circle(x + 60 * dir, y + 20, 8);
+    // Wheels (filled so road markings don't show through)
+    setfillstyle(SOLID_FILL, DARKGRAY);
+    setcolor(DARKGRAY);
+    fillellipse(x + 20 * dir, y + 20, 8, 8);
+    fillellipse(x + 60 * dir, y + 20, 8, 8);
 }
 
 void bicycle(int x, int y, int dir)
