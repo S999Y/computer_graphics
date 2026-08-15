@@ -1,3 +1,5 @@
 secret/
 *.exe
 test/
+config.bat
+node_modules
